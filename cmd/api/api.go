@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -14,7 +15,14 @@ type application struct {
 }
 
 type config struct {
-	db dbConfig
+	db             dbConfig
+	workerPoolSize int
+	taskTimeout    time.Duration
+	leaseDuration  time.Duration
+	pollInterval   time.Duration
+	maxRetries     int
+	logLevel       string
+	logFormat      string
 }
 
 type dbConfig struct {
@@ -50,6 +58,8 @@ func (app *application) run(h http.Handler) error {
 		ReadTimeout:  time.Second * 30,
 		IdleTimeout:  time.Minute,
 	}
+
+	fmt.Printf("Server has started on port %s", app.addr)
 
 	return server.ListenAndServe()
 }
