@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -18,6 +22,9 @@ func initialize() {
 
 func main() {
 	initialize()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	cfg := config{
 		db: dbConfig{
@@ -39,8 +46,9 @@ func main() {
 		config: cfg,
 	}
 
-	err := app.run(app.mount())
+	err := app.run(ctx, app.mount())
 	if err != nil {
+		fmt.Println("Exit error:", err)
 		os.Exit(1)
 	}
 

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/magomed066/go-task-queue/internal/json"
 )
 
 type application struct {
@@ -41,16 +44,24 @@ func (app *application) mount() http.Handler {
 	// Set a timeout value on the request context (ctx), that will signal
 	// through ctx.Done() that the request has timed out and further
 	// processing should be stopped.
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.Timeout(25 * time.Second))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("hi"))
 	})
 
+	r.Get("/health/live", func(w http.ResponseWriter, r *http.Request) {
+		json.WriteResponse(w, http.StatusOK, "Live")
+	})
+
+	r.Get("/health/ready", func(w http.ResponseWriter, r *http.Request) {
+		json.WriteResponse(w, http.StatusOK, "Ready")
+	})
+
 	return r
 }
 
-func (app *application) run(h http.Handler) error {
+func (app *application) run(ctx context.Context, h http.Handler) error {
 	server := http.Server{
 		Addr:         app.addr,
 		Handler:      h,
@@ -61,5 +72,35 @@ func (app *application) run(h http.Handler) error {
 
 	fmt.Printf("Server has started on port %s", app.addr)
 
-	return server.ListenAndServe()
+	errorCh := make(chan error, 1)
+
+	go func() {
+		err := server.ListenAndServe()
+
+		errorCh <- err
+	}()
+
+	select {
+	case err := <-errorCh:
+		return err
+
+	case <-ctx.Done():
+		ctx, cancel := context.WithTimeout(
+			context.Background(),
+			time.Second*20,
+		)
+		defer cancel()
+
+		shutdownErr := server.Shutdown(ctx)
+		if shutdownErr != nil {
+			_ = server.Close()
+		}
+
+		serverErr := <-errorCh
+		if errors.Is(serverErr, http.ErrServerClosed) {
+			serverErr = nil
+		}
+
+		return errors.Join(shutdownErr, serverErr)
+	}
 }
